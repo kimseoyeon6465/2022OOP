@@ -1,0 +1,397 @@
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
+#include <iostream>
+#include <conio.h> // console io
+#include <cstring> // string.h
+#include <cstdlib> // stdlib.h
+#include <string> // c++ string class
+#include <Windows.h>
+#include <stdlib.h>//itoa함수를 사용하기 위함
+
+const int directionToLeft = 0;
+const int directionToRight = 1;
+
+struct Screen;
+struct Player;
+struct Enemy;
+struct Bullet;
+struct Bullets;
+
+struct Screen {
+	int      size;
+	char* canvas;
+	int      nRemaining;
+	// constructor (생성자 함수) 메모리공간상에 적재되는 순간 호출되는
+	Screen(unsigned int size)
+	{
+		if (size == 0) size = 80;
+		this->size = size;
+		canvas = new char[size + 1];
+	}
+	void clear()
+	{
+		memset(canvas, ' ', size);
+	}
+	void draw(int pos, const char* face)
+	{
+		strncpy(&(canvas[pos]), face, strlen(face));
+	}
+	void draw(int pos, char face)
+	{
+		if (pos < 0 || pos >= size) return;
+		canvas[pos] = face;
+	}
+	bool drawDirection(Player* player, Enemy* enemy);//Player의 진행방향이 오른쪽이면 true를, 왼쪽이면 false를 return
+	void render()
+	{
+		canvas[size] = '\0';  // render screen
+		printf("%s\r", canvas);
+	}
+	bool isInRange(Bullet* bullet);
+
+	// destructor (소멸자 함수) 메모리공간상에서 없어지는 순간 호출되는 함수
+	~Screen()
+	{
+		delete[] canvas;
+		canvas = nullptr;
+		size = 0;
+	}
+};
+struct Player {
+	char   face[20];
+	char   hp[10];//Player의 HpNow를 저장할 char형 배열 hp 선언
+	int      pos;
+	int      nRemaining;
+	int      HpNow;//Player의 hp를 저장할 int형 변수 HpNow 선언
+
+	Player(const char* face, int pos)
+	{
+		strcpy(this->face, face);
+		this->pos = pos;
+		this->nRemaining = 0;
+		this->HpNow = 50;//Player의 HpNow를 50으로 초기화
+	}
+	bool isAlive(int HpNow)//Player의 HpNow가 0이 되었는지 체크하는 함수
+	{
+		if (HpNow == 0)
+			return false;
+		else
+			return true;
+	}
+	bool isHit(Enemy* enemy);//Player와 Enemy의 충돌여부를 판단하는 함수
+	void onHit(Enemy* enemy);//Player와 Enemy가 충돌했을 때 동작하는 함수
+	void fire(Bullets* bullets, Enemy* enemy);
+	void move(int direction)
+	{
+		(direction == directionToLeft) ? --pos : ++pos;
+	}
+	void draw(Screen* screen)
+	{
+		screen->draw(pos, face);
+	}
+	void drawPlayerHp(Screen* screen, Enemy* enemy, int pos, const char* face, int HpNow);
+	//Player의 진행방향이 오른쪽이면 왼쪽에, 진행방향이 왼쪽이면 오른쪽에 hp를 나타나게 하는 함수
+	void update(const char* face)
+	{
+		if (nRemaining == 0) return;
+		--nRemaining;
+		if (nRemaining == 0) strcpy(this->face, face);
+	}
+	void update(Screen* screen, Enemy* enemy)
+	{
+		if (isHit(enemy) == true)//Player가 Enemy와 충돌하면
+		{
+			HpNow--;//Player의 HpNow를 감소시킴
+			drawPlayerHp(screen, enemy, pos, face, HpNow);//Player의 hp를 화면에 나타냄
+		}
+	}
+	void onEnemyHit()
+	{
+		strcpy(face, "\\(^_^)/");
+		nRemaining = 30;
+	}
+	int  getPos()
+	{
+		return pos;
+	}
+	const char* getFace()
+	{
+		return face;
+	}
+};
+struct Enemy {
+	char   face[20];
+	char   hp[10];//Enemy의 HpNow를 저장할 char형 배열 hp 선언
+	int      pos;
+	int      nRemaining;
+	int     nMovementInterval;
+	float   fPos;
+	int      HpNow;//Enemy의 hp를 저장할 int형 변수 HpNow 선언
+
+	Enemy(const char* face, int pos)
+	{
+		strcpy(this->face, face);
+		this->pos = pos;
+		this->HpNow = 50;//Enemy의 HpNow를 50으로 초기화
+		nRemaining = 0;
+		fPos = pos;
+	}
+	void move()//Enemy를 Player쪽으로 이동시킴
+	{
+		pos--;
+	}
+	void draw(Screen* screen)
+	{
+		screen->draw(pos, face);
+	}
+	void drawEnemyHp(Screen* screen, int pos, const char* face, int HpNow)//Enemy의 hp를 나타나게 하는 함수
+	{
+		_itoa(HpNow, hp, 10);//Enemy의 HpNow를 10진수 문자열로 변환
+		strncpy(&(screen->canvas[pos + strlen(face) + 1]), hp, strlen(hp));//화면에 Enemy의 얼굴 한칸 뒤에 hp가 나타나게 함
+	}
+	void update(const char* face, float* second)//Enemy의 이동속도를 늦추기 위해 second 변수 사용
+	{
+		if (*second < 1) {}
+		else//main함수에서 second를 0.1씩 증가시켜 second==1이면 Enemy를 한칸 이동시키고 다시 0으로 만들어줌
+		{
+			move();
+			*second = 0;
+		}
+		if (nRemaining == 0) return;
+		--nRemaining;
+		if (nRemaining == 0) strcpy(this->face, face);
+	}
+
+	bool isHit(Bullet* bullet);
+	void onHit(Screen* screen, Player* player)
+	{
+		HpNow -= 5;//Enemy가 총알에 맞았을 때 총알의 데미지 크기인 5만큼 플레이어의 HpNow를 감소시킴
+		drawEnemyHp(screen, pos, face, HpNow);//Enemy의 hp에 변화가 있으니 화면에 나타냄
+		strcpy(face, "(T_T)");
+		nRemaining = 10;
+	}
+	int  getPos()
+	{
+		return pos;
+	}
+};
+struct Bullet {
+	bool   isReady;
+	int      pos;
+	int      direction;
+
+	Bullet()
+	{
+		isReady = true;
+		pos = 0;
+		direction = directionToLeft;
+	}
+	void setFire(Player* player, Enemy* enemy)
+	{
+		isReady = false; // inUse
+
+		// direction 설정
+		int enemy_pos = enemy->getPos();
+		int player_pos = player->getPos();
+		const char* player_face = player->getFace();
+
+		direction = directionToLeft;
+		if (player_pos < enemy_pos) direction = directionToRight;
+
+		// bullet position 설정
+		pos = player_pos;
+		if (direction == directionToRight) pos += (strlen(player_face) - 1);
+	}
+	void move()
+	{
+		(direction == directionToLeft) ? --pos : ++pos;
+	}
+	void draw(Screen* screen)
+	{
+		if (isReady == true) return;
+		screen->draw(pos, '-');
+	}
+	void reuse()
+	{
+		isReady = true;
+	}
+	void update(Player* player, Enemy* enemy, Screen* screen)
+	{
+		if (isReady == true) return;
+
+		move();
+		if (enemy->isHit(this))
+		{ // 적이 총알을 맞았을 때
+			enemy->onHit(screen, player);
+			player->onEnemyHit();
+			reuse();
+		}
+		if (!screen->isInRange(this)) reuse();
+	}
+	int  getPos() // function definition
+	{
+		return pos;
+	}
+	int  getDirection()
+	{
+		return direction;
+	}
+
+	bool isAvailable() { return isReady; }
+};
+struct Bullets {
+	int      nBullets; // 5
+	Bullet* bullets;
+
+	Bullets(unsigned int nBullets)
+	{
+		if (nBullets == 0) nBullets = 5;
+		this->nBullets = nBullets;
+		bullets = new Bullet[nBullets];
+	}
+	void draw(Screen* screen)
+	{
+		for (int i = 0; i < nBullets; i++)
+		{
+			Bullet* bullet = &bullets[i];
+			bullet->draw(screen);
+		}
+	}
+	void update(Player* player, Enemy* enemy, Screen* screen)
+	{
+		for (int i = 0; i < nBullets; i++)
+		{
+			Bullet* bullet = &bullets[i];
+			bullet->update(player, enemy, screen);
+		}
+	}
+	Bullet* find_unused_bullet()
+	{
+		for (int i = 0; i < nBullets; i++)
+		{
+			Bullet* bullet = &bullets[i];
+			if (bullet->isAvailable() == true) return bullet;
+		}
+		return nullptr;
+	}
+	~Bullets()
+	{
+		delete[] bullets;
+		bullets = nullptr;
+		nBullets = 0;
+	}
+};
+
+// forward declaration 전방위 선언
+// function prototype declaration 함수 원형 선언
+bool Screen::isInRange(Bullet* bullet)
+{
+	int bullet_pos = bullet->getPos();
+	return bullet_pos >= 0 && bullet_pos < size;
+}
+bool Screen::drawDirection(Player* player, Enemy* enemy)
+{
+	int enemy_pos = enemy->getPos();
+	int player_pos = player->getPos();
+
+	if (player_pos < enemy_pos)
+		return true;
+	else
+		return false;
+}
+void Player::drawPlayerHp(Screen* screen, Enemy* enemy, int pos, const char* face, int HpNow)
+{
+	_itoa(HpNow, hp, 10);//int형 변수 HpNow를 10진수 문자열 hp로 변환
+	screen->drawDirection(this, enemy);//hp를 표시할 방향 체크
+	if (screen->drawDirection(this, enemy) == true)//Player의 진행방향이 오른쪽이므로 왼쪽에 hp 표시
+	{
+		strncpy(&(screen->canvas[pos - 3]), hp, strlen(hp));
+	}
+	strncpy(&(screen->canvas[pos + strlen(face) + 1]), hp, strlen(hp));//Player의 진행방향이 왼쪽이므로 오른쪽에 hp 표시
+	nRemaining = 5;//0.5초간 hp가 화면에 나타남
+}
+bool Player::isHit(Enemy* enemy)//Player와 Enemy의 충돌을 체크
+{
+	if (enemy->pos + strlen(face) - 1 == pos || enemy->pos == pos + strlen(face) - 1)//Player와 Enemy가 충돌한 경우
+		return true;
+	else
+		return false;
+}
+
+void Player::fire(Bullets* bullets, Enemy* enemy)
+{
+	Bullet* bullet = bullets->find_unused_bullet();
+	if (bullet == nullptr) return;
+	bullet->setFire(this, enemy);
+}
+bool Enemy::isHit(Bullet* bullet)
+{
+	int bullet_direction = bullet->getDirection();
+	int bullet_pos = bullet->getPos();
+	return (
+		(bullet_direction == directionToLeft && pos + strlen(face) - 1 == bullet_pos)
+		|| (bullet_direction == directionToRight && pos == bullet_pos));
+}
+
+int main()
+{
+	int major;
+	int minor;
+	float second = 0;//Enemy의 이동속도를 늦춰줄 변수 second를 0으로 초기화
+
+	Screen  screen(80);
+	Player   player("(-_-)", 5);
+	Enemy   enemy("(`_#)", 60);//1번 구현 성공
+	Bullets bullets(5);//총알의 갯수를 5개로 제한
+	float* p = &second;
+	// game loop
+
+	bool isLooping = true;
+	while (isLooping) {
+		screen.clear();
+		second = second + 0.1;//1초에 1칸씩 이동하기위해 second 변수를 0.1씩 증가시킴
+		player.update("(-_-)");
+		enemy.update("(`_#)", p);
+		player.update(&screen, &enemy);
+		bullets.update(&player, &enemy, &screen);
+
+		player.draw(&screen);
+		enemy.draw(&screen);
+		bullets.draw(&screen);
+
+		screen.render();
+		Sleep(100);
+
+		if (player.isAlive(player.HpNow) == false)//Player의 hp가 0이 되었을 때, 게임 종료
+			isLooping = false;
+
+		if (!_kbhit()) continue;
+
+		major = _getch();
+		switch (major) {
+		case 'q':
+			isLooping = false;
+			break;
+
+		case ' ':
+			player.fire(&bullets, &enemy);
+			break;
+		case 224: // arrow key, function key pressed
+			minor = _getch();
+			switch (minor) {
+			case 75: // left
+				player.move(directionToLeft);
+				break;
+			case 77: // right
+				player.move(directionToRight);
+				break;
+			}
+			break;
+		}
+	}
+	printf("\nGame Over\n");
+
+	return 0;
+}
